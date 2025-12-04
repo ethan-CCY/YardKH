@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vanta.js Mode Switch Demo</title>
+    <style>
+        /* --- 基礎設定與排版 --- */
+        body, html {
+            height: 100%;
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Consolas', 'Arial', sans-serif;
+            background-color: #000;
+        }
+
+        /* Vanta 背景層 */
+        #vanta-canvas {
+            width: 100%;
+            height: 100vh;
+            position: absolute;
+            z-index: 1;
+        }
+
+        /* 【關鍵】1. 線條微光暈效果 (Soft Glow) */
+        /* 使用 filter: drop-shadow 給動畫線條本體增加光暈 */
+        #vanta-canvas canvas {
+            filter: drop-shadow(0 0 5px rgba(255, 255, 255, 0.5));
+            transition: filter 0.5s ease-in-out; /* 讓光暈切換時更平滑 */
+        }
+        
+        /* 頁面上的主要內容容器 */
+        .container {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            z-index: 3;
+            pointer-events: none; /* 讓容器不阻擋滑鼠與 Vanta.js 的互動 */
+        }
+
+        /* --- 文字內容區 --- */
+        .content {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: #ffffff;
+            pointer-events: none;
+            text-shadow: 0 0 15px rgba(255, 255, 255, 0.7);
+        }
+
+        #mode-title {
+            font-size: 3.5rem;
+            letter-spacing: 0.3em;
+            text-transform: uppercase;
+            font-weight: 900;
+            margin: 0;
+            transition: color 0.5s ease-in-out;
+        }
+
+        #mode-subtitle {
+            font-size: 1rem;
+            letter-spacing: 0.5em;
+            opacity: 0.7;
+            margin-top: 10px;
+            color: #ffffff;
+            transition: color 0.5s ease-in-out;
+        }
+        
+        /* --- 2. 切換按鈕樣式 (Sci-Fi Icon) --- */
+        #toggle-button {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            pointer-events: auto; /* 確保按鈕可點擊 */
+            cursor: pointer;
+            width: 60px;
+            height: 60px;
+            background: transparent;
+            border: none;
+            padding: 0;
+            transition: transform 0.2s, opacity 0.2s;
+        }
+
+        #toggle-button:hover {
+            transform: scale(1.1);
+        }
+
+        /* 六角形圖標 (使用 CSS 技巧繪製) */
+        .icon {
+            position: absolute;
+            width: 30px;
+            height: 52px; /* 高度為寬度的 2 * (sqrt(3)/2) */
+            background-color: rgba(255, 255, 255, 0.1); /* 背景色半透明 */
+            margin: 4px 0 0 15px; /* 置中 */
+            border-radius: 5px;
+            transition: background-color 0.5s;
+        }
+        
+        /* 六角形的上下兩個尖角 */
+        .icon:before, .icon:after {
+            content: "";
+            position: absolute;
+            width: 0;
+            border-left: 30px solid transparent;
+            border-right: 30px solid transparent;
+            transition: border-color 0.5s;
+        }
+
+        .icon:before {
+            bottom: 100%;
+            border-bottom: 15px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .icon:after {
+            top: 100%;
+            border-top: 15px solid rgba(255, 255, 255, 0.1);
+        }
+
+        /* 按鈕的內側發光邊框 */
+        .icon-border {
+            position: absolute;
+            width: 50px;
+            height: 50px;
+            top: 5px;
+            left: 5px;
+            border-radius: 50%;
+            box-shadow: 0 0 15px currentColor; /* 利用currentColor實現顏色同步切換 */
+            transition: box-shadow 0.5s;
+        }
+
+        /* 初始 (巡航) 顏色樣式 */
+        .mode-cruise {
+            color: #88ccff; /* 淺藍色 */
+        }
+        
+        /* 危險模式 (Danger) 顏色樣式 */
+        .mode-danger {
+            color: #ff4444; /* 警示紅色 */
+        }
+    </style>
+</head>
+<body>
+
+    <div id="vanta-canvas"></div>
+
+    <div class="container">
+        <div class="content">
+            <h1 id="mode-title" class="mode-cruise">CRUISE MODE</h1>
+            <p id="mode-subtitle">NORMAL OPERATION</p>
+        </div>
+
+        <button id="toggle-button" class="mode-cruise" aria-label="Toggle Vanta Mode">
+            <div class="icon"></div>
+            <div class="icon-border"></div>
+        </button>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/vanta/0.5.24/vanta.rings.min.js"></script>
+
+    <script>
+        let vantaEffect;
+        let isDangerMode = false;
+        
+        // 模式參數設定 (數字都是 16 進位 RGB 數值)
+        const CRUISE_MODE = {
+            title: "CRUISE MODE",
+            subtitle: "NORMAL OPERATION",
+            color: 0x88ccff,      // 冷藍色
+            speed: 1.0,           // 正常速度
+            background: 0x010108  // 深藍黑
+        };
+
+        const DANGER_MODE = {
+            title: "DANGER MODE",
+            subtitle: "GRAVITY ACCELERATION",
+            color: 0xff4444,      // 警示紅色
+            speed: 2.5,           // 加速
+            background: 0x1a0505  // 深紅黑
+        };
+
+        // 1. 初始化 Vanta.js (使用巡航模式的參數)
+        vantaEffect = VANTA.RINGS({
+            el: "#vanta-canvas",
+            mouseControls: true,
+            touchControls: true,
+            gyroControls: false,
+            minHeight: 200.00,
+            minWidth: 200.00,
+            scale: 1.00,
+            scaleMobile: 1.00,
+            
+            // 初始參數
+            backgroundColor: CRUISE_MODE.background,
+            color: CRUISE_MODE.color,
+            backgroundAlpha: 1.0,
+            // 為了讓速度可控，我們使用 Vanta.js 的 `rotationSpeed` 參數
+            // 雖然 RINGS 沒有公開 `rotationSpeed`，但我們可以使用 `THREE.Vector3` 來手動控制
+            // 這裡我們主要依賴 vanta.js 內部對 `mouseControls` 和 `touchControls` 的處理，
+            // 並且透過 `THREE` 屬性來影響它。
+            // 由於 Vanta.js RINGS 的速度主要來自 `mouseControls` 和隱藏的 `THREE` 屬性, 
+            // 我們主要通過重新初始化或修改參數來實現「模式切換」。
+        });
+
+        const toggleButton = document.getElementById('toggle-button');
+        const modeTitle = document.getElementById('mode-title');
+        const modeSubtitle = document.getElementById('mode-subtitle');
+
+        function updateVanta(mode) {
+            // 這是 Vanta.js 的更新方法，用來改變運行中的參數
+            vantaEffect.setOptions({
+                backgroundColor: mode.background,
+                color: mode.color,
+                // 由於 RINGS 效果的速度控制參數在 Vanta.js 內部是隱藏的或通過 THREE.js 屬性控制
+                // 最穩定的做法是重新初始化來改變其視覺「活力」
+                // 然而，為避免閃爍，我們主要改變顏色，並在文字上表現「加速」感。
+                // 如果用戶想要更明顯的「加速」感，Vanta.js 的 `WAVE` 或 `NET` 效果會更適合控制速度參數。
+                // 對於 RINGS，我們主要以顏色和文字來表現狀態切換。
+            });
+            
+            // 更新 UI 資訊
+            modeTitle.textContent = mode.title;
+            modeSubtitle.textContent = mode.subtitle;
+
+            // 切換 CSS 類別，改變文字與按鈕的顏色
+            modeTitle.className = isDangerMode ? 'mode-danger' : 'mode-cruise';
+            toggleButton.className = isDangerMode ? 'mode-danger' : 'mode-cruise';
+        }
+
+        toggleButton.addEventListener('click', () => {
+            isDangerMode = !isDangerMode; // 切換狀態
+            
+            const newMode = isDangerMode ? DANGER_MODE : CRUISE_MODE;
+            
+            // 呼叫更新函數
+            updateVanta(newMode);
+        });
+
+    </script>
+</body>
+</html>
